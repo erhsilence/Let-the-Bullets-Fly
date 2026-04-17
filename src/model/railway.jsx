@@ -3,6 +3,10 @@ import { useFrame } from '@react-three/fiber'
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 
+import {
+  installRailwayTrackFade,
+} from '../shaders/railwayTrackFade.js'
+
 const RAILWAY_URL = '/railway.glb'
 
 useGLTF.preload(RAILWAY_URL)
@@ -12,6 +16,139 @@ useGLTF.preload(RAILWAY_URL)
  * (with center on the XZ plane).
  * `sagitta` is the arc height at the chord midpoint.
  */
+function createTrackFadeUniforms(fadeWidth) {
+  return {
+    uFadeWidth: { value: fadeWidth },
+    uArcBase: { value: 0 },
+    uArcDelta: { value: 0 },
+    uOrigin: { value: new THREE.Vector3() },
+    uTangent: { value: new THREE.Vector3() },
+    uSegLen: { value: 1 },
+  }
+}
+
+/**
+ * @param {THREE.Group} group
+ * @param {object} cfg
+ * @param {number} index
+ * @param {number} scroll
+ * @param {boolean} infinite
+ * @param {number} fadeWidth
+ */
+function updateTrackFadeUniforms(group, cfg, index, scroll, infinite, fadeWidth) {
+  const uniforms = group?.userData?.railFadeUniforms
+  if (!uniforms || !group || !cfg) return
+
+  uniforms.uFadeWidth.value = fadeWidth
+
+  const { curve, totalLen, segmentLength, count, localForward } = cfg
+  const fwd = localForward
+
+  let sOnArc
+  let sForFade
+  const fadeLen = Math.max(count * segmentLength, 1e-4)
+  if (infinite) {
+    const period = count * segmentLength
+    let s = index * segmentLength - scroll
+    s = THREE.MathUtils.euclideanModulo(s, period)
+    sOnArc = THREE.MathUtils.euclideanModulo(s, totalLen)
+    sForFade = THREE.MathUtils.euclideanModulo(s, fadeLen)
+  } else {
+    sOnArc = Math.min(index * segmentLength, totalLen - 1e-5)
+    sForFade = Math.min(index * segmentLength, fadeLen - 1e-5)
+  }
+
+  const paramU = Math.min(sOnArc / totalLen, 1 - 1e-6)
+  const pos = curve.getPointAt(paramU)
+  const tangent = curve.getTangentAt(paramU)
+  const tXZ = tangent.clone()
+  tXZ.y = 0
+  if (tXZ.lengthSq() < 1e-10) tXZ.copy(fwd).normalize()
+  else tXZ.normalize()
+
+  const parent = group.parent
+  uniforms.uArcBase.value = sForFade / fadeLen
+  uniforms.uArcDelta.value = segmentLength / fadeLen
+  uniforms.uOrigin.value.copy(pos)
+  if (parent) parent.localToWorld(uniforms.uOrigin.value)
+  uniforms.uTangent.value.copy(tXZ)
+  if (parent)
+    uniforms.uTangent.value.transformDirection(parent.matrixWorld)
+  uniforms.uSegLen.value =
+    segmentLength * (parent ? parent.matrixWorld.getMaxScaleOnAxis() : 1)
+}
+
+function RailwayTrackPiece({
+  scene,
+  index,
+  infinite,
+  fadeWidth,
+  config,
+  configRef,
+  scrollRef,
+  position,
+  quaternion,
+  setItemRef,
+}) {
+  const rootRef = useRef(null)
+
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+
+    const uniforms = createTrackFadeUniforms(fadeWidth)
+    root.userData.railFadeUniforms = uniforms
+
+    const disposables = []
+    root.traverse((o) => {
+      if (!o.isMesh) return
+      const mats = Array.isArray(o.material) ? o.material : [o.material]
+      const next = mats.map((m) => {
+        const c = m.clone()
+        installRailwayTrackFade(c, uniforms)
+        disposables.push(c)
+        return c
+      })
+      o.material = next.length === 1 ? next[0] : next
+    })
+
+    const cfg = configRef.current
+    if (cfg)
+      updateTrackFadeUniforms(
+        root,
+        cfg,
+        index,
+        infinite ? scrollRef.current : 0,
+        infinite,
+        fadeWidth,
+      )
+
+    return () => {
+      for (const m of disposables) m.dispose()
+      delete root.userData.railFadeUniforms
+    }
+  }, [scene, fadeWidth, index, infinite, configRef, scrollRef])
+
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root || !config || infinite) return
+    updateTrackFadeUniforms(root, config, index, 0, false, fadeWidth)
+  }, [infinite, index, position, quaternion, config, fadeWidth])
+
+  return (
+    <group
+      ref={(el) => {
+        rootRef.current = el
+        setItemRef(index, el)
+      }}
+      position={position}
+      quaternion={quaternion}
+    >
+      <Clone object={scene} />
+    </group>
+  )
+}
+
 class RailArcCurve extends THREE.Curve {
   constructor(L, sagitta) {
     super()
@@ -58,14 +195,16 @@ class RailArcCurve extends THREE.Curve {
  * @param {number} [maxSegments=12] Upper cap to avoid spawning too many segments when model data is abnormal.
  * @param {boolean} [infinite=false] If true, segments loop backward along arc length (making the train appear to move forward).
  * @param {number} [scrollSpeed=3.2] Backward scrolling speed along arc length in infinite mode (world units/second).
+ * @param {number} [fadeWidth=0.12] 弧长归一化 [0,1] 上两端淡出宽度，越大透明过渡越长。
  */
 export default function Railway({
   curveLength = 14,
   bend = 5,
   segmentLength: segmentLengthProp,
-  maxSegments = 12,
+  maxSegments = 8,
   infinite = false,
   scrollSpeed = 3.2,
+  fadeWidth = 0.12,
   ...props
 }) {
   const { scene } = useGLTF(RAILWAY_URL)
@@ -75,6 +214,8 @@ export default function Railway({
   const configRef = useRef(null)
   const scrollSpeedRef = useRef(scrollSpeed)
   scrollSpeedRef.current = scrollSpeed
+  const fadeWidthRef = useRef(fadeWidth)
+  fadeWidthRef.current = fadeWidth
 
   const config = useMemo(() => {
     scene.updateMatrixWorld(true)
@@ -154,6 +295,7 @@ export default function Railway({
 
       g.position.copy(pos)
       g.quaternion.setFromUnitVectors(fwd, tXZ)
+      updateTrackFadeUniforms(g, cfg, i, scroll, true, fadeWidthRef.current)
     }
   }, [])
 
@@ -170,23 +312,43 @@ export default function Railway({
 
   const { staticPlacements, count } = config
 
+  const setItemRef = useCallback((i, el) => {
+    if (el) itemRefs.current[i] = el
+    else delete itemRefs.current[i]
+  }, [])
+
   return (
     <group {...props}>
       {infinite
         ? Array.from({ length: count }, (_, i) => (
-          <group
+          <RailwayTrackPiece
             key={i}
-            ref={(el) => {
-              if (el) itemRefs.current[i] = el
-            }}
-          >
-            <Clone object={scene} />
-          </group>
+            scene={scene}
+            index={i}
+            infinite
+            fadeWidth={fadeWidth}
+            config={config}
+            configRef={configRef}
+            scrollRef={scrollRef}
+            position={[0, 0, 0]}
+            quaternion={[0, 0, 0, 1]}
+            setItemRef={setItemRef}
+          />
         ))
         : staticPlacements.map(({ pos, quat }, i) => (
-          <group key={i} position={[pos.x, pos.y, pos.z]} quaternion={quat}>
-            <Clone object={scene} />
-          </group>
+          <RailwayTrackPiece
+            key={i}
+            scene={scene}
+            index={i}
+            infinite={false}
+            fadeWidth={fadeWidth}
+            config={config}
+            configRef={configRef}
+            scrollRef={scrollRef}
+            position={[pos.x, pos.y, pos.z]}
+            quaternion={quat}
+            setItemRef={setItemRef}
+          />
         ))}
     </group>
   )

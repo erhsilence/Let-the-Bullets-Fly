@@ -14,6 +14,9 @@ importers:
       '@react-three/fiber':
         specifier: ^9.1.0
         version: 9.5.0(@types/react@19.2.14)(react-dom@19.0.4(react@19.0.4))(react@19.0.4)(three@0.174.0)
+      lil-gui:
+        specifier: ^0.21.0
+        version: 0.21.0
       r3f-perf:
         specifier: ^7.2.3
         version: 7.2.3(@react-three/fiber@9.5.0(@types/react@19.2.14)(react-dom@19.0.4(react@19.0.4))(react@19.0.4)(three@0.174.0))(@types/react@19.2.14)(@types/three@0.183.1)(react-dom@19.0.4(react@19.0.4))(react@19.0.4)(three@0.174.0)(use-sync-external-store@1.6.0(react@19.0.4))
@@ -737,6 +740,9 @@ packages:
 
   lie@3.3.0:
     resolution: {integrity: sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==}
+
+  lil-gui@0.21.0:
+    resolution: {integrity: sha512-tpvxN7v1GvE/Tv+GRopfOp0W7fVEjF4PltkuX8vOCIfim22rD1ztvfkoEMcv9lzQeuNUSeIrUmUjBwmlW/oUew==}
 
   loose-envify@1.4.0:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
@@ -1691,6 +1697,8 @@ snapshots:
   lie@3.3.0:
     dependencies:
       immediate: 3.0.6
+
+  lil-gui@0.21.0: {}
 
   loose-envify@1.4.0:
     dependencies:

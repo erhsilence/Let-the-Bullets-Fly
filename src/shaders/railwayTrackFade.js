@@ -2,18 +2,6 @@ import * as THREE from 'three'
 
 const MARK = '__railTrackFadeInstalled'
 
-/**
- * 在 MeshStandard / MeshPhysical 等材质上注入弧长两端淡出（基于 varying vTrackFade）。
- * @param {THREE.Material} material
- * @param {{
- *   uFadeWidth: THREE.IUniform<number>
- *   uArcBase: THREE.IUniform<number>
- *   uArcDelta: THREE.IUniform<number>
- *   uOrigin: THREE.IUniform<THREE.Vector3>
- *   uTangent: THREE.IUniform<THREE.Vector3>
- *   uSegLen: THREE.IUniform<number>
- * }} uniforms
- */
 export function installRailwayTrackFade(material, uniforms) {
   if (material[MARK]) return
   material[MARK] = true

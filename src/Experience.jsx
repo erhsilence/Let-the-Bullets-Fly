@@ -11,7 +11,10 @@ export default function Experience() {
         <ambientLight intensity={1.5} />
 
         <Railway infinite scrollSpeed={0.8} />
-        <Train />
+        <Train
+            position={[2.98, -0.02, 1.26]}
+            rotation={[0, -0.82, 0]}
+        />
 
     </>
 }
